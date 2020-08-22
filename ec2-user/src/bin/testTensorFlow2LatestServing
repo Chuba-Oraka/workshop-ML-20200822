@@ -1,0 +1,31 @@
+#!/bin/bash
+# Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+. ~/.bashrc
+
+. ~/src/bin/testUtil
+cd_to_home_dir
+HOME_DIR=`echo $PWD`
+TEST_DIR=${HOME_DIR}/examples/tensorflow2_latest_serving
+TF2_BIN_DIR=${HOME_DIR}/src/bin
+
+# Just in case
+cd ${TEST_DIR}
+rm -rf models
+
+source activate tensorflow2_latest_p37
+
+python mnist_saved_model.py models/mnist || exit 1
+
+tensorflow2_latest_model_server --port=9000 --model_name=mnist --model_base_path=${TEST_DIR}/models/mnist &
+SERVER_PID=$!
+
+python ${TF2_BIN_DIR}/testScripts/check_tf2_latest_model_server_status.py 9000 || exit 1
+
+python mnist_client.py --num_tests=1000 --server=127.0.0.1:9000 || exit 1
+
+kill -9 $SERVER_PID
+source deactivate
+rm -rf models
+
+exit 0

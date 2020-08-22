@@ -1,0 +1,80 @@
+#!/bin/bash
+
+print_title() {
+    echo ""
+    echo "==============================  $1  =============================="
+    echo ""
+}
+
+test_conda_create() {
+  set -e
+
+  print_title testCondaEnvironmentCreationWithCondaPackage
+  conda create -n testCondaCreatePytest python=3.6 --yes
+  source activate testCondaCreatePytest
+  conda install -y pytest
+  python -c "import pytest"
+  conda deactivate
+
+  print_title testCondaEnvironmentCreationWithPipPackage
+  conda create -n testCondaPipChainer python=2.7 --yes
+  source activate testCondaPipChainer
+  yes | pip install chainer==6.5.0
+  python -c "import chainer; chainer.__version__"
+  conda deactivate
+
+  print_title removeCondaEnvironments
+  conda env remove -n testCondaCreatePytest --yes
+  conda env remove -n testCondaPipChainer --yes
+
+  set +e
+}
+
+conda_install() {
+  local CONDA_ENV=$1
+  print_title "testing ${CONDA_ENV}"
+  source activate ${CONDA_ENV}
+
+  set -e  
+  python -c "import nose"
+  if [ $? -eq 0 ]
+  then
+      conda remove -y nose || exit 1
+      pip uninstall -y nose || exit 1
+  fi
+
+
+  conda install -y nose
+  python -c "import nose"
+  conda remove -y nose
+
+  # log will contain lines like below 
+  # ERROR: sagemaker 1.55.0 requires numpy>=1.9.0, which is not installed.
+  # this is expected because 'conda remove -y pytest' caused removal of anaconda distribution
+  # from the conda environment. pip packages like `sagemaker` can no longer find its conda 
+  # package dependencies.
+  pip install -U --ignore-installed nose 
+  python -c "import nose"
+  pip uninstall -y nose
+
+  conda deactivate
+  set +e
+}
+
+
+. ~/.bashrc
+
+# # test the conda env lifecycle i.e. conda create, install, uninstall, delete
+test_conda_create
+
+# # test to do both conda and pip install and uninstall of a new package in all the 
+# # prebuilt conda envs in DLAMI 
+CONDA_ENV_LIST=($(conda info --envs | awk 'BEGIN{n=3}NR<=n{next}1' | awk '{print $1}'))
+for (( i=0; i<${#CONDA_ENV_LIST[@]}; i++ ));
+do
+  conda_install "${CONDA_ENV_LIST[i]}"
+  if ! [ $? -eq 0 ]; then
+    echo "testConda failed with env: ${CONDA_ENV_LIST[i]}"
+    exit 1
+  fi
+done
